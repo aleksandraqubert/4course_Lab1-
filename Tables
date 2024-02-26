@@ -1,0 +1,144 @@
+Table Fact_inventory {
+PriceById int-сума товару за айди
+CountProductById int-кількість продукти за айди
+SurfaceById int-загальна площа
+timeId int [ref: > Dim_time.id]
+locationId int [ref: > Dim_location.id]
+productsId int [ref: > Dim_products.id]
+}
+
+Table Dim_time {
+id int [pk]
+everyday int
+week int
+month int
+3m int
+4m int
+6m int 
+year int
+}
+
+Table Dim_location {
+id int [pk]
+region varcher
+city varcher
+district varcher
+PropertieOccupied int- зайнята площа
+}
+
+Table Dim_products {
+id int [pk]
+category varcher
+type varcher
+name varcher
+}
+-- У першому кварталі 2020 року щодо складів у Києві знайти загальну вартість товарів,
+-- що зберігаються на кожному складі на будь-яку задану дату,
+-- та знайти середньодобову загальну вартість товарів на кожному складі протягом попереднього тижня (включаючи поточну дату).
+
+SELECT 
+l.city,
+t.3m,
+t.everyday,
+t.week, 
+i.PriceById,
+i.CountProductById ,
+i.locationId,
+SUM(i.PriceById* i.CountProductById) OVER (PARTITION BY l.city, i.locationId ,t.everyday order by t.3m rows unbounded preceding)
+
+(SUM(i.PriceById* i.CountProductById) OVER (PARTITION BY l.city, i.locationId ,t.everyday order by t.week rows between 6 preceding and current row) )  /7  
+
+FROM 
+ Fact_inventory i, Dim_location l, Dim_time t 
+WHERE 
+i.locationId=l.id and i.timeId=t.id and t.year=2020 and l.city="Kiev" and  t.3m between 1 and 3 
+GROUP BY 
+ l.city, t.3m,t.everyday,t.week, i.PriceById,i.CountProductById, i.locationId
+
+--  У 2021 році для кожного міста та дати знайти відсоток щоденної вільної 
+-- площі складів.
+--  Проставити ранг результатам (ранг 1 – найнижчий відсоток).
+SELECT 
+    l.city,
+    t.everyday,
+    l.PropertieOccupied,
+    i.SurfaceById,
+    i.locationId,
+    (SUM(i.SurfaceById) - SUM(l.PropertieOccupied) / SUM(i.SurfaceById) OVER (PARTITION BY l.city, i.locationId order by t.everyday rows unbounded preceding)) * 100%
+    RANK() OVER (PARTITION BY l.city, t.everyday ORDER BY ((SUM(i.SurfaceById) - SUM(l.PropertieOccupied)) / SUM(i.SurfaceById))) 
+FROM 
+Fact_inventory i, Dim_location l, Dim_time t JOIN 
+WHERE 
+i.locationId=l.id and i.timeId=t.id and year=2021
+GROUP BY 
+    l.city, t.everyday, l.PropertieOccupied, i.SurfaceById, i.locationId;
+
+
+-- У перші 6 місяців 2021 року знайти відсоток вільної площі для кожного складу та дати.
+
+SELECT 
+    l.city,
+    t.everyday,
+    t.6m,
+    l.PropertieOccupied,
+    i.SurfaceById,
+    i.locationId,
+    ((SUM(i.SurfaceById) - SUM(l.PropertieOccupied)) / SUM(i.SurfaceById) OVER (PARTITION BY l.city,t.everyday, i.locationId order by t.6m rows unbounded preceding)) * 100%  
+FROM 
+    Fact_inventory i, Dim_location l, Dim_time t
+WHERE 
+i.locationId=l.id and i.timeId=t.id and year=2021 and  6m between 1 and 6 
+GROUP BY 
+    l.city, t.everyday, t.6m, l.PropertieOccupied, i.SurfaceById, i.locationId;
+
+
+--  У 2020 р. знайти середньодобову загальну вартість продуктів для кожного складу та 
+--місяця.
+SELECT 
+    l.city,
+    t.everyday,
+    t.month, 
+    i.PriceById,
+    i.CountProductById,
+    i.locationId,
+    (SUM(i.PriceById * i.CountProductById) OVER (PARTITION BY l.city, i.locationId ,t.everyday order by t.month rows unbounded preceding)) / 7
+FROM 
+ Fact_inventory i, Dim_location l, Dim_time t 
+WHERE 
+i.locationId=l.id and i.timeId=t.id and year=2020 
+GROUP BY 
+    l.city, t.everyday, t.month, i.PriceById, i.CountProductById, i.locationId;
+
+
+-- У 2020 р. знайти середньодобову загальну вартість продукції для кожної області.
+
+SELECT 
+    l.region,
+    t.everyday, 
+    i.PriceById,
+    i.CountProductById ,
+    (SUM(i.PriceById * i.CountProductById)  OVER (PARTITION BY l.region order by t.everyday rows unbounded preceding)) / 7
+FROM 
+ Fact_inventory i, Dim_location l, Dim_time t 
+WHERE 
+i.locationId=l.id and i.timeId=t.id and year=2020 
+GROUP BY 
+    l.region, t.everyday, i.PriceById, i.CountProductById;
+
+
+-- У 2021 році знайти середній відсоток денної вільної площі для кожного місяця та області.
+
+SELECT 
+    l.region,
+    t.everyday,
+    t.month,
+    l.PropertieOccupied,
+    i.SurfaceById,
+    ((SUM(i.SurfaceById) - SUM(l.PropertieOccupied)) / SUM(i.SurfaceById)  OVER (PARTITION BY l.region,t.everyday order by t.month rows unbounded preceding)) * 100%  
+FROM 
+ Fact_inventory i, Dim_location l, Dim_time t 
+WHERE 
+i.locationId=l.id and i.timeId=t.id and year=2021 
+GROUP BY 
+   l.region, t.everyday, t.month, l.PropertieOccupied, i.SurfaceById;
+
